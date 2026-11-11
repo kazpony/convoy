@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#101418">
+<title>隊列インカム</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#101418; --panel:#1a2027; --line:#2c3540; --text:#eef2f5; --sub:#93a1ae;
+  --accent:#35c2a1; --accent-text:#06231c; --warn:#f2b441; --talk:#ef5350; --me:#22303a; --line-green:#06c755;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f3f5f7; --panel:#ffffff; --line:#d5dbe1; --text:#16202a; --sub:#5d6b78;
+    --accent:#0f9d7f; --accent-text:#ffffff; --warn:#b97a00; --talk:#d93025; --me:#e3f4ef;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI",sans-serif;
+  overscroll-behavior:none;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+button,a.btn{font:inherit;color:inherit;border:1px solid var(--line);background:var(--panel);border-radius:12px;cursor:pointer;
+  text-decoration:none;text-align:center;display:block}
+button:active,a.btn:active{filter:brightness(1.25)}
+button:disabled{opacity:.45}
+input,textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;width:100%;
+  -webkit-user-select:text;user-select:text}
+.hidden{display:none !important}
+
+/* ---- 参加画面 ---- */
+#join{max-width:440px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:16px}
+#join h1{font-size:26px;margin:0}
+#join p{color:var(--sub);margin:0;font-size:14px;line-height:1.6}
+label{font-size:13px;color:var(--sub);display:block;margin-bottom:6px}
+.row{display:flex;gap:8px}
+.row button{padding:0 14px;white-space:nowrap}
+#roomInput{text-transform:uppercase;letter-spacing:.15em;font-size:20px;font-weight:700}
+#joinBtn{background:var(--accent);color:var(--accent-text);border:none;font-size:20px;font-weight:700;padding:18px}
+#joinErr{color:var(--warn);min-height:1.4em}
+
+/* ---- メイン画面 ---- */
+#main{height:100%;max-width:520px;margin:0 auto;display:flex;flex-direction:column;
+  padding:calc(8px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));gap:8px}
+#top{display:flex;align-items:center;gap:6px}
+#roomLabel{font-weight:700;letter-spacing:.1em;font-size:17px}
+#status{flex:1;font-size:12px;color:var(--sub);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#top button{padding:8px 10px;font-size:14px;white-space:nowrap}
+
+#unlockBar{background:var(--talk);color:#fff;border:none;font-size:18px;font-weight:700;padding:14px}
+#banner{background:var(--warn);color:#1b1300;border-radius:12px;padding:12px 14px;font-size:20px;font-weight:700;line-height:1.3}
+
+#formation{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+#formation::before,#formation::after{content:"";margin:auto}      /* 中央寄せ（溢れたらスクロール） */
+.car{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 14px}
+.car.me{background:var(--me);border-color:var(--accent)}
+.car .num{font-size:28px;font-weight:800;min-width:2.6em}
+.car .num small{font-size:14px;font-weight:600;margin-left:2px}
+.car .who{flex:1;font-size:17px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.car .tag{font-size:13px;color:var(--sub)}
+.car.talking{border-color:var(--talk)}
+.car.talking .tag{color:var(--talk);font-weight:700}
+.gap{display:flex;align-items:baseline;justify-content:center;gap:14px;color:var(--sub);font-size:16px;padding:1px 0}
+.gap.big{color:var(--text)}
+.gap.big .dist{font-size:42px;font-weight:800;line-height:1.1}
+.gap.big .time{font-size:24px;font-weight:700;color:var(--accent)}
+.gap .dist{font-weight:700}
+.alone{text-align:center;color:var(--sub);font-size:15px;line-height:1.7;padding:12px}
+
+#swap{display:flex;gap:8px}
+#swap button{flex:1;padding:8px;font-size:15px}
+#phrases{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#phrases button{padding:10px 6px;font-size:16px;font-weight:600;min-height:48px;overflow:hidden}
+#phrases button.sent{background:var(--accent);color:var(--accent-text)}
+#ptt{border:none;background:var(--accent);color:var(--accent-text);font-size:32px;font-weight:800;min-height:150px;border-radius:22px;
+  touch-action:none;flex-shrink:0}
+#ptt small{display:block;font-size:13px;font-weight:500;opacity:.85;margin-top:6px}
+#ptt.on{background:var(--talk);color:#fff}
+#ptt.nomic{background:var(--panel);color:var(--sub);border:1px solid var(--line)}
+@media (max-height:640px){ #ptt{min-height:110px;font-size:26px} }
+
+/* ---- ダイアログ ---- */
+.dlg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:14px;z-index:10}
+.sheet{background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:18px;width:100%;max-width:420px;max-height:100%;
+  overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.sheet h2{margin:0;font-size:18px}
+.sheet button,.sheet a.btn{padding:14px;font-size:17px;font-weight:600}
+.sheet .note{font-size:13px;color:var(--sub);line-height:1.6;margin:0}
+#inviteCode{font-size:34px;font-weight:800;letter-spacing:.18em;text-align:center}
+#inviteQr{display:flex;justify-content:center}
+#inviteQr img{background:#fff;border-radius:10px;width:190px;height:190px;image-rendering:pixelated}
+#inviteUrl{font-size:12px;padding:10px;resize:none;height:4.2em;word-break:break-all}
+#lineBtn{background:var(--line-green);color:#fff;border:none}
+#inviteMsg{min-height:1.3em;color:var(--accent);font-weight:700;text-align:center;font-size:14px}
+#phraseEdit{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#phraseEdit input{padding:10px;font-size:15px}
+</style>
+</head>
+<body>
+
+<!-- 参加画面 -->
+<div id="join">
+  <h1>隊列インカム</h1>
+  <p>同じルームコードを入れた車同士で、車間距離の表示・定型ボイス・トランシーバー通話ができます。登録不要。</p>
+  <div>
+    <label for="nameInput">名前（相手に表示されます）</label>
+    <input id="nameInput" maxlength="12" placeholder="例：たろう" autocomplete="off">
+  </div>
+  <div>
+    <label for="roomInput">ルームコード（英数字4〜10文字）</label>
+    <div class="row">
+      <input id="roomInput" maxlength="10" placeholder="ABC123" autocomplete="off" autocapitalize="characters">
+      <button id="genBtn" type="button">新規作成</button>
+    </div>
+  </div>
+  <button id="joinBtn" type="button">参加する</button>
+  <div id="joinErr"></div>
+  <p>参加時に「位置情報」と「マイク」の許可を求めます。走行中は画面を点けたままにしてください（画面を消している間は位置共有と通話が止まり、戻ると自動で再接続します）。運転者は走行中に操作せず、同乗者が操作するか停車中に使ってください。</p>
+</div>
+
+<!-- メイン画面 -->
+<div id="main" class="hidden">
+  <div id="top">
+    <span id="roomLabel"></span>
+    <span id="status"></span>
+    <button id="shareBtn" type="button">招待</button>
+    <button id="setBtn" type="button">設定</button>
+    <button id="leaveBtn" type="button">退出</button>
+  </div>
+  <button id="unlockBar" class="hidden" type="button">ここをタップして音声を再開</button>
+  <div id="banner" class="hidden"></div>
+  <div id="formation"></div>
+  <div id="swap">
+    <button id="upBtn" type="button">▲ 前に出た</button>
+    <button id="downBtn" type="button">▼ 後ろに下がった</button>
+  </div>
+  <div id="phrases"></div>
+  <button id="ptt" type="button"><span id="pttLabel">話す</span><small id="pttSub"></small></button>
+  <div id="audios"></div>
+</div>
+
+<!-- 招待 -->
+<div id="inviteDlg" class="dlg hidden">
+  <div class="sheet">
+    <h2>仲間を招待</h2>
+    <div id="inviteCode"></div>
+    <div id="inviteQr"></div>
+    <p class="note">その場にいる人はQRコードを読み取るだけ。離れている人にはLINEやリンクで送ってください。リンクを開くとルームコードは入力済みです。</p>
+    <a id="lineBtn" class="btn" target="_blank" rel="noopener">LINEで送る</a>
+    <button id="copyBtn" type="button">リンクをコピー</button>
+    <button id="osShareBtn" type="button">ほかのアプリで共有</button>
+    <textarea id="inviteUrl" readonly></textarea>
+    <div id="inviteMsg"></div>
+    <button id="inviteClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<!-- 設定 -->
+<div id="setDlg" class="dlg hidden">
+  <div class="sheet">
+    <h2>定型文の編集</h2>
+    <p class="note">自分のボタンだけが変わります（この端末に保存）。空欄にしたボタンは表示されません。各20文字まで。</p>
+    <div id="phraseEdit"></div>
+    <button id="setSave" type="button">保存</button>
+    <button id="setReset" type="button">初期の定型文に戻す</button>
+    <button id="setClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   隊列インカム — 単一HTML / サーバーレス（PeerJS 公開シグナリング）
+   ・各端末は「<接頭辞><ルーム>-<席番号1..MAX>」という Peer ID を取得
+   ・全員が全員に直接つなぐメッシュ（データ＋音声）
+   ・本人識別は cid（端末に保存）。席番号は再接続で変わってよい
+   ============================================================ */
+const MAX_SLOTS = 6;
+const ID_PREFIX = 'cvy-intercom-v1-';
+const DEFAULT_PHRASES = [
+  '次のコンビニ入るよ', '次の道の駅入るよ',
+  '信号に引っかかった', '追いついたよ',
+  '休憩したい', '給油したい',
+  '先に行ってて', '了解',
+];
+const SESSION_TTL = 12 * 3600 * 1000;     // この時間内なら開き直しで自動再参加
+const SIM = new URLSearchParams(location.search).has('sim');   // 机上テスト用の擬似GPS
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), v => 'abcdefghijklmnopqrstuvwxyz0123456789'[v % 36]).join('');
+
+const S = {
+  room: '', name: '', slot: 0, peer: null, left: true, started: false, rejoining: false,
+  cid: '', joinedAt: 0, born: Date.now(), primary: true,
+  conns: new Map(),     // slot -> DataConnection
+  calls: new Map(),     // slot -> MediaConnection
+  members: new Map(),   // slot -> {name, cid, born, joinedAt, pos, talking, seen}
+  pending: new Map(),   // slot -> {conn, at}
+  order: [], ver: 0, by: '',            // order は cid の配列（前から順）
+  pos: null, stream: null, micOk: false, micDenied: false, micBusy: false, talking: false, latchTimer: 0,
+  audioCtx: null, spoken: false, needTap: false,
+  watchId: null, gpsStart: 0, gpsErr: false, wake: null, timers: [],
+  discAt: 0, discCount: 0, lastTick: 0, graceUntil: 0,
+  phrases: DEFAULT_PHRASES.slice(),
+};
+
+/* ---------- 参加画面 ---------- */
+const cleanRoom = s => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+function genCode() {
+  const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(6)), v => ch[v % ch.length]).join('');
+}
+function joinErr(msg) { $('joinErr').textContent = msg; }
+$('genBtn').onclick = () => { $('roomInput').value = genCode(); };
+$('joinBtn').onclick = () => join(false);
+
+function boot() { // 起動時：入力欄の復元と、前回セッションへの自動再参加（スクリプト末尾から呼ぶ）
+  const m = location.hash.match(/room=([A-Za-z0-9]+)/);
+  const hashRoom = m ? cleanRoom(m[1]) : '';
+  const id = store.get('cvy_id');
+  $('nameInput').value = (id && id.name) || '';
+  $('roomInput').value = hashRoom || (id && id.room) || '';
+  const ph = store.get('cvy_phrases');
+  if (Array.isArray(ph) && ph.length === DEFAULT_PHRASES.length) S.phrases = ph.map(x => String(x || '').slice(0, 20));
+  if (id && id.active && id.name && id.cid && Date.now() - id.at < SESSION_TTL && (!hashRoom || hashRoom === id.room)) {
+    lockCid(id.cid).then(ok => { if (ok) join(true); });      // 別タブが使用中なら自動参加しない
+  } else if (hashRoom && !$('nameInput').value) $('nameInput').focus();
+}
+
+/* 同じブラウザの別タブが同じ cid を使わないよう Web Locks で排他 */
+const heldLocks = new Set();
+function lockCid(cid) {
+  if (heldLocks.has(cid) || !navigator.locks) return Promise.resolve(true);
+  return new Promise(res => {
+    navigator.locks.request('cvy-cid-' + cid, { ifAvailable: true }, lock => {
+      if (!lock) { res(false); return; }
+      heldLocks.add(cid); res(true);
+      return new Promise(() => {});          // ページが生きている間は保持
+    }).catch(() => res(true));
+  });
+}
+async function pickIdentity(room, name) {
+  let id = store.get('cvy_id');
+  if (!id || !id.cid || id.room !== room || Date.now() - id.at > SESSION_TTL) id = { room, cid: rand(12), joinedAt: Date.now() };
+  S.primary = await lockCid(id.cid);
+  if (!S.primary) id = { room, cid: rand(12), joinedAt: Date.now() };
+  S.cid = id.cid; S.joinedAt = id.joinedAt;
+  saveId(true);
+}
+function saveId(active) {
+  if (!S.primary || !S.cid) return;
+  store.set('cvy_id', { room: S.room, name: S.name, cid: S.cid, joinedAt: S.joinedAt, at: Date.now(), active });
+}
+
+function getMic() {
+  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+}
+function bindStream() {
+  S.stream.getAudioTracks().forEach(t => {
+    t.enabled = S.talking;
+    t.onended = () => { if (!S.left) checkMic(false); };
+  });
+}
+
+async function join(auto) {
+  const name = $('nameInput').value.trim().slice(0, 12);
+  const room = cleanRoom($('roomInput').value);
+  if (!name) return joinErr('名前を入れてください');
+  if (room.length < 4) return joinErr('ルームコードは英数字4文字以上にしてください');
+  if (typeof Peer === 'undefined') return joinErr('通信ライブラリを読み込めません。ネット接続を確認して再読み込みしてください');
+  S.name = name; S.room = room; S.left = false; S.started = false; S.rejoining = false;
+  $('joinBtn').disabled = true;
+  joinErr(auto ? '前回のルーム ' + room + ' に再接続中…' : '接続中…');
+  await pickIdentity(room, name);
+
+  // 音まわりの解錠（手動参加ならタップ直後なので確実。自動再参加は後で1タップ必要なことがある）
+  try { S.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); S.audioCtx.resume(); } catch (e) {}
+  if (!auto) { try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); S.spoken = true; } catch (e) {} }
+
+  // マイク（拒否されても聞く専用で参加できる）
+  try { S.stream = await getMic(); S.micOk = true; S.micDenied = false; }
+  catch (e) {
+    S.micOk = false; S.micDenied = !auto && e && e.name === 'NotAllowedError';
+    try { S.stream = S.audioCtx.createMediaStreamDestination().stream; } catch (e2) { S.stream = new MediaStream(); }
+  }
+  bindStream();
+  if (S.left) return;
+  claimSlot(1);
+}
+
+/* ---------- 席（Peer ID）の確保 ---------- */
+const slotOf = id => { const m = String(id).match(/-(\d+)$/); return m ? +m[1] : 0; };
+const idOf = slot => ID_PREFIX + S.room + '-' + slot;
+
+function claimSlot(n) {
+  if (S.left) return;
+  if (n > MAX_SLOTS) {
+    if (S.started) { setTimeout(() => claimSlot(1), 5000); return; }
+    leave(false); return joinErr('このルームは満員です（最大' + MAX_SLOTS + '台）');
+  }
+  const p = new Peer(idOf(n));
+  let opened = false;
+  p.on('open', () => {
+    if (S.left) { p.destroy(); return; }
+    S.discCount = 0;
+    if (!opened) {
+      opened = true; S.peer = p; S.slot = n; S.rejoining = false;
+      if (!S.started) { S.started = true; firstSetup(); }
+    }
+    probe(); render();
+  });
+  p.on('error', e => {
+    if (e.type === 'peer-unavailable') return;            // 空席への接続試行。正常
+    if (!opened) {
+      p.destroy();
+      if (e.type === 'unavailable-id') { claimSlot(n + 1); return; }
+      if (S.started) { setTimeout(() => claimSlot(1), 3000); return; }       // 復旧中は粘る
+      leave(false); joinErr('接続できませんでした（' + e.type + '）。時間をおいて再試行してください'); return;
+    }
+    if (S.peer !== p) return;
+    if (e.type === 'unavailable-id') { rejoin(); return; }                   // 再接続時に席が取られていた
+    setStatus();
+  });
+  p.on('connection', c => { if (S.peer === p) setupConn(c, false); });
+  p.on('call', call => { if (S.peer !== p) return; call.answer(S.stream); setupCall(slotOf(call.peer), call); });
+  p.on('disconnected', () => { if (S.peer === p) { S.discAt = Date.now(); setStatus(); } });
+}
+
+function firstSetup() {
+  $('join').classList.add('hidden');
+  $('main').classList.remove('hidden');
+  $('roomLabel').textContent = S.room;
+  history.replaceState(null, '', location.pathname + location.search + '#room=' + S.room);
+  renderPhrases(); updatePtt();
+  startGps();
+  requestWake();
+  S.lastTick = Date.now();
+  S.timers.push(setInterval(probe, 12000));
+  S.timers.push(setInterval(tick, 1000));
+}
+
+/* ---------- メッシュ接続 ---------- */
+function probe() {
+  if (S.left || !S.peer || S.peer.disconnected || S.peer.destroyed) return;
+  const now = Date.now();
+  for (let s = 1; s <= MAX_SLOTS; s++) {
+    if (s === S.slot || S.conns.has(s)) continue;
+    const pd = S.pending.get(s);
+    if (pd) { if (now - pd.at < 10000) continue; try { pd.conn.close(); } catch (e) {} S.pending.delete(s); }
+    let c = null;
+    try { c = S.peer.connect(idOf(s), { reliable: true }); } catch (e) {}
+    if (!c) continue;
+    S.pending.set(s, { conn: c, at: now });
+    setupConn(c, true);
+  }
+}
+
+function setupConn(c, mine) {
+  const s = slotOf(c.peer);
+  if (!s || s === S.slot) { try { c.close(); } catch (e) {} return; }
+  c.on('open', () => {
+    const pd = S.pending.get(s); if (pd && pd.conn === c) S.pending.delete(s);
+    const old = S.conns.get(s);
+    if (old && old !== c && old.open) {
+      // 同時接続で二重になったら「席番号が大きい側が張った接続」を残す
+      const initiator = mine ? S.slot : s;
+      if (initiator !== Math.max(S.slot, s)) { c.close(); return; }
+      S.conns.set(s, c); old.close();
+    }
+    S.conns.set(s, c);
+    if (!S.members.has(s)) S.members.set(s, { name: '', cid: '', born: 0, joinedAt: 0, pos: null, talking: false, seen: Date.now() });
+    send(c, { t: 'hello', name: S.name, cid: S.cid, born: S.born, joinedAt: S.joinedAt, order: S.order, ver: S.ver, by: S.by });
+    if (S.pos) send(c, { t: 'pos', p: S.pos });
+    if (S.talking) send(c, { t: 'ptt', on: true });
+    if (S.slot > s) startCall(s);
+    render();
+  });
+  c.on('data', d => onData(s, c, d));
+  c._gone = () => {
+    const pd = S.pending.get(s); if (pd && pd.conn === c) S.pending.delete(s);
+    if (S.conns.get(s) !== c) return;
+    S.conns.delete(s); S.members.delete(s); closeCall(s); render();
+    setTimeout(probe, 1500);                 // すぐつなぎ直しを試す
+  };
+  c.on('close', c._gone);
+  c.on('error', c._gone);
+}
+function dropConn(c) { try { c.close(); } catch (e) {} if (c._gone) c._gone(); }
+function dropAll() {
+  const cs = [...S.conns.values()], ks = [...S.calls.values()], ps = [...S.pending.values()];
+  S.conns.clear(); S.calls.clear(); S.members.clear(); S.pending.clear();
+  cs.forEach(c => { try { c.close(); } catch (e) {} });
+  ks.forEach(k => { try { k.close(); } catch (e) {} });
+  ps.forEach(p => { try { p.conn.close(); } catch (e) {} });
+  $('audios').innerHTML = '';
+}
+/* シグナリングごと切れた時：接続を捨てて席を取り直す（マイク・GPS・隊列順は維持） */
+function rejoin() {
+  if (S.left || S.rejoining) return;
+  S.rejoining = true;
+  dropAll();
+  const p = S.peer; S.peer = null;
+  try { if (p) p.destroy(); } catch (e) {}
+  render();
+  setTimeout(() => claimSlot(1), 500);
+}
+
+function send(c, obj) { try { if (c.open) c.send(obj); } catch (e) {} }
+function broadcast(obj) { S.conns.forEach(c => send(c, obj)); }
+
+function onData(s, c, d) {
+  const m = S.members.get(s);
+  if (!m || !d || typeof d !== 'object') return;
+  m.seen = Date.now();
+  switch (d.t) {
+    case 'hello':
+      m.name = String(d.name || '').slice(0, 12);
+      m.cid = String(d.cid || '').slice(0, 24);
+      m.born = +d.born || 0; m.joinedAt = +d.joinedAt || 0;
+      mergeOrder(d); break;
+    case 'order': mergeOrder(d); break;
+    case 'pos':
+      if (d.p && isFinite(d.p.lat) && isFinite(d.p.lon)) m.pos = { lat: +d.p.lat, lon: +d.p.lon, spd: +d.p.spd || 0, at: Date.now() };
+      break;
+    case 'say': notify(s, String(d.text || '').slice(0, 40)); break;
+    case 'ptt': m.talking = !!d.on; break;
+    case 'ping': if (d.echo) send(c, { t: 'pong' }); break;
+    case 'recall': if (S.slot > s) startCall(s); break;
+  }
+  render();
+}
+
+/* ---------- 音声（PTT） ---------- */
+function startCall(s) {
+  closeCall(s);
+  try { const call = S.peer.call(idOf(s), S.stream); if (call) setupCall(s, call); } catch (e) {}
+}
+function setupCall(s, call) {
+  const old = S.calls.get(s);
+  if (old && old !== call) { try { old.close(); } catch (e) {} }
+  S.calls.set(s, call);
+  call.on('stream', remote => {
+    let a = $('audio' + s);
+    if (!a) { a = document.createElement('audio'); a.id = 'audio' + s; a.autoplay = true; a.setAttribute('playsinline', ''); $('audios').appendChild(a); }
+    a.srcObject = remote;
+    a.play().catch(() => { S.needTap = true; });      // 自動再生が止められた → 1タップで再開
+  });
+  call.on('close', () => { if (S.calls.get(s) === call) { S.calls.delete(s); const a = $('audio' + s); if (a) a.remove(); } });
+  call.on('error', () => {});
+}
+function closeCall(s) {
+  const call = S.calls.get(s);
+  if (call) { S.calls.delete(s); try { call.close(); } catch (e) {} }
+  const a = $('audio' + s); if (a) a.remove();
+}
+
+/* マイクが止まっていたら取り直し、通話中の相手へ差し替える */
+async function checkMic(byTap) {
+  if (S.left || S.micBusy || S.micDenied || document.visibilityState !== 'visible') return;
+  const tr = S.stream && S.stream.getAudioTracks()[0];
+  if (S.micOk && tr && tr.readyState === 'live') return;
+  S.micBusy = true;
+  try {
+    const ns = await getMic();
+    const old = S.stream; S.stream = ns; S.micOk = true; bindStream();
+    const nt = ns.getAudioTracks()[0];
+    S.calls.forEach((call, s) => {
+      let sender = null;
+      try { sender = call.peerConnection.getSenders().find(x => x.track && x.track.kind === 'audio') || call.peerConnection.getSenders()[0]; } catch (e) {}
+      if (sender) sender.replaceTrack(nt).catch(() => {});
+      else if (S.slot > s) startCall(s);
+      else { const c = S.conns.get(s); if (c) send(c, { t: 'recall' }); }
+    });
+    try { old.getTracks().forEach(t => { t.onended = null; t.stop(); }); } catch (e) {}
+  } catch (e) {
+    S.micOk = false;
+    if (byTap && e && e.name === 'NotAllowedError') S.micDenied = true;
+  }
+  S.micBusy = false;
+  updatePtt();
+}
+
+function updatePtt() {
+  $('ptt').classList.toggle('nomic', !S.micOk);
+  $('ptt').classList.toggle('on', S.micOk && S.talking);
+  $('pttLabel').textContent = !S.micOk ? 'マイクなし' : S.talking ? '送話中' : '話す';
+  $('pttSub').textContent = !S.micOk ? (S.micDenied ? '聞く専用で参加中' : 'タップでマイクを有効にする')
+                                     : '押している間 ／ 短くタップで固定（20秒）';
+}
+function setTalking(on) {
+  clearTimeout(S.latchTimer);
+  if (!S.micOk) on = false;
+  if (S.talking === on) return;
+  S.talking = on;
+  S.stream.getAudioTracks().forEach(t => { t.enabled = on; });
+  broadcast({ t: 'ptt', on });
+  updatePtt();
+  if (on) beep(880, 0.08);
+  render();
+}
+{
+  const b = $('ptt'); let downAt = 0, wasLatched = false;
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!S.micOk) return;                                              // unlock() がマイク再取得を試みる
+    try { b.setPointerCapture(e.pointerId); } catch (err) {}
+    if (S.talking) { wasLatched = true; setTalking(false); return; }   // 固定中のタップ → 終了
+    wasLatched = false; downAt = Date.now(); setTalking(true);
+  });
+  b.addEventListener('pointerup', () => {
+    if (!S.talking || wasLatched) return;
+    if (Date.now() - downAt < 350) {                                   // 短いタップ → 20秒固定
+      clearTimeout(S.latchTimer);
+      S.latchTimer = setTimeout(() => setTalking(false), 20000);
+    } else setTalking(false);
+  });
+  b.addEventListener('pointercancel', () => setTalking(false));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+/* どこかをタップしたら、止められていた音声・マイクを再開する */
+function unlock() {
+  if (S.left || !S.started) return;
+  try { if (S.audioCtx && S.audioCtx.state !== 'running') S.audioCtx.resume(); } catch (e) {}
+  if (!S.spoken) { try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); S.spoken = true; } catch (e) {} }
+  document.querySelectorAll('#audios audio').forEach(a => { if (a.paused) a.play().catch(() => {}); });
+  if (!S.micOk) checkMic(true);
+  S.needTap = false;
+  $('unlockBar').classList.add('hidden');
+}
+document.addEventListener('pointerdown', unlock, true);
+
+/* ---------- 定型ボイス ---------- */
+function renderPhrases() {
+  $('phrases').innerHTML = '';
+  S.phrases.forEach(text => {
+    if (!text) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = text;
+    b.onclick = () => {
+      broadcast({ t: 'say', text });
+      b.classList.add('sent'); setTimeout(() => b.classList.remove('sent'), 600);
+      beep(660, 0.06);
+    };
+    $('phrases').appendChild(b);
+  });
+}
+$('setBtn').onclick = () => {
+  $('phraseEdit').innerHTML = '';
+  S.phrases.forEach((text, i) => {
+    const inp = document.createElement('input');
+    inp.maxLength = 20; inp.value = text; inp.placeholder = '定型文 ' + (i + 1); inp.autocomplete = 'off';
+    $('phraseEdit').appendChild(inp);
+  });
+  $('setDlg').classList.remove('hidden');
+};
+$('setSave').onclick = () => {
+  S.phrases = [...$('phraseEdit').querySelectorAll('input')].map(i => i.value.trim().slice(0, 20));
+  store.set('cvy_phrases', S.phrases);
+  renderPhrases(); $('setDlg').classList.add('hidden');
+};
+$('setReset').onclick = () => {
+  [...$('phraseEdit').querySelectorAll('input')].forEach((inp, i) => { inp.value = DEFAULT_PHRASES[i]; });
+};
+$('setClose').onclick = () => $('setDlg').classList.add('hidden');
+
+let bannerTimer = 0;
+function notify(s, text) {
+  if (!text) return;
+  const n = carNo(s), m = S.members.get(s);
+  $('banner').textContent = n + '号車' + (m && m.name ? ' ' + m.name : '') + '：' + text;
+  $('banner').classList.remove('hidden');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => $('banner').classList.add('hidden'), 8000);
+  beep(990, 0.12);
+  try {
+    const u = new SpeechSynthesisUtterance(n + '号車。' + text);
+    u.lang = 'ja-JP'; u.rate = 1.05;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function beep(freq, dur) {
+  try {
+    const ctx = S.audioCtx; if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; g.gain.value = 0.15;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur);
+  } catch (e) {}
+}
+
+/* ---------- 隊列順（cid の並びを全員で共有。版番号が新しいものを採用） ---------- */
+function mergeOrder(d) {
+  if (!Array.isArray(d.order)) return;
+  const ver = +d.ver || 0, by = String(d.by || '');
+  if (ver > S.ver || (ver === S.ver && by > S.by)) {
+    S.order = d.order.map(String).filter(x => x && x.length <= 24).slice(0, 30);
+    S.ver = ver; S.by = by;
+  }
+}
+const cidOf = s => s === S.slot ? S.cid : ((S.members.get(s) || {}).cid || '');
+function lineup() {          // 現在いる車を前から順に（席番号の配列）
+  const ps = [{ slot: S.slot, cid: S.cid, born: S.born, joinedAt: S.joinedAt }];
+  S.conns.forEach((c, s) => {
+    const m = S.members.get(s);
+    if (m) ps.push({ slot: s, cid: m.cid || '?' + s, born: m.born, joinedAt: m.cid ? m.joinedAt : Number.MAX_SAFE_INTEGER });
+  });
+  const best = new Map();    // 同じ cid が2つ見える間（再読み込み直後の残像）は新しい方だけ
+  ps.forEach(p => { const b = best.get(p.cid); if (!b || p.born > b.born) best.set(p.cid, p); });
+  const head = [];
+  S.order.forEach(cid => { const p = best.get(cid); if (p && !head.includes(p)) head.push(p); });
+  const rest = [...best.values()].filter(p => !head.includes(p))
+    .sort((a, b) => (a.joinedAt - b.joinedAt) || (a.cid < b.cid ? -1 : 1));       // 未指定は参加が早い順
+  return head.concat(rest).map(p => p.slot);
+}
+const carNo = s => lineup().indexOf(s) + 1;
+function move(dir) {
+  const list = lineup(), i = list.indexOf(S.slot), j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  const a = S.cid, b = cidOf(list[j]);
+  if (!b) return;
+  const full = S.order.slice();              // 一時的に切れている車の位置は保ったまま入れ替える
+  list.map(cidOf).forEach(c => { if (c && !full.includes(c)) full.push(c); });
+  const ia = full.indexOf(a), ib = full.indexOf(b);
+  full[ia] = b; full[ib] = a;
+  S.order = full.slice(-30); S.ver++; S.by = S.cid;
+  broadcast({ t: 'order', order: S.order, ver: S.ver, by: S.by });
+  render();
+}
+$('upBtn').onclick = () => move(-1);
+$('downBtn').onclick = () => move(1);
+
+/* ---------- 位置 ---------- */
+function startGps() {
+  S.gpsStart = Date.now();
+  if (SIM) {            // 擬似GPS：北へ時速54kmで走行、席番号ごとに後方へずらす
+    const f = () => {
+      const t = (Date.now() / 1000) % 3600;
+      setPos({ lat: 35 + (15 * t - S.slot * 230) / 111320, lon: 137.5, spd: 15 });
+    };
+    f(); S.timers.push(setInterval(f, 1000));
+    return;
+  }
+  if (!navigator.geolocation) { S.gpsErr = true; return; }
+  let prev = null;
+  S.watchId = navigator.geolocation.watchPosition(g => {
+    const c = g.coords; let spd = c.speed;
+    if (spd == null || isNaN(spd)) {       // 速度を返さない端末は前回位置から推定
+      spd = 0;
+      if (prev) { const dt = (g.timestamp - prev.ts) / 1000; if (dt > 0.5) spd = dist(prev, { lat: c.latitude, lon: c.longitude }) / dt; }
+    }
+    prev = { lat: c.latitude, lon: c.longitude, ts: g.timestamp };
+    setPos({ lat: c.latitude, lon: c.longitude, spd });
+  }, () => { S.gpsErr = true; setStatus(); }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+}
+function restartGpsIfStale() {             // 1分以上更新が無ければ測位をやり直す
+  if (SIM || S.watchId == null) return;
+  const now = Date.now(), last = Math.max(S.gpsStart, S.pos ? S.pos.at : 0);
+  if (now - last < 60000) return;
+  try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {}
+  S.watchId = null; startGps();
+}
+let lastSent = 0;
+function setPos(p) {
+  S.pos = { lat: p.lat, lon: p.lon, spd: p.spd, at: Date.now() };
+  S.gpsErr = false;
+  if (Date.now() - lastSent > 900) { lastSent = Date.now(); broadcast({ t: 'pos', p: S.pos }); }
+}
+function dist(a, b) {          // 直線距離 [m]
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const fmtDist = m => m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km';
+const fmtTime = s => s < 60 ? Math.round(s) + '秒' : s < 3600 ? Math.floor(s / 60) + '分' + String(Math.round(s % 60)).padStart(2, '0') + '秒' : '1時間以上';
+
+/* ---------- 自動復旧 ---------- */
+/* 画面復帰・電波復帰・フリーズ明けに呼ぶ：全部を点検してつなぎ直す */
+function resume() {
+  if (S.left || !S.started) return;
+  const t0 = Date.now();
+  S.graceUntil = t0 + 6000;                 // 点検が終わるまで無通信切断の判定を待つ
+  requestWake();
+  try { if (S.audioCtx && S.audioCtx.state !== 'running') S.audioCtx.resume(); } catch (e) {}
+  if (S.peer && !S.peer.destroyed && S.peer.disconnected) { try { S.peer.reconnect(); } catch (e) {} S.discAt = t0; }
+  checkMic(false);
+  restartGpsIfStale();
+  broadcast({ t: 'ping', echo: 1 });         // 4秒以内に返事のない相手は切れたとみなす
+  setTimeout(() => {
+    if (S.left) return;
+    S.conns.forEach((c, s) => { const m = S.members.get(s); if (m && m.seen < t0) dropConn(c); });
+    probe();
+  }, 4000);
+  probe(); render();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resume(); });
+window.addEventListener('online', resume);
+window.addEventListener('pageshow', e => { if (e.persisted) resume(); });
+
+/* ---------- 毎秒処理 ---------- */
+function tick() {
+  const now = Date.now();
+  if (now - S.lastTick > 5000) { S.lastTick = now; resume(); return; }       // タイマーが止まっていた＝復帰直後
+  S.lastTick = now;
+  if (!S.peer) { render(); return; }                                         // 席を取り直し中
+  if (S.peer.destroyed) { rejoin(); return; }
+  if (S.peer.disconnected && now - S.discAt > 3000) {
+    S.discAt = now;
+    if (++S.discCount > 8) { rejoin(); return; }
+    try { S.peer.reconnect(); } catch (e) {}
+  }
+  if (now - lastSent > 3000) { lastSent = now; broadcast(S.pos ? { t: 'pos', p: S.pos } : { t: 'ping' }); }   // 停車中も生存通知
+  if (now > S.graceUntil) S.conns.forEach((c, s) => {                         // 10秒無音の相手は切断扱い → 再接続へ
+    const m = S.members.get(s);
+    if (m && now - m.seen > 10000) dropConn(c);
+  });
+  if (now % 60000 < 1000) { saveId(true); restartGpsIfStale(); }
+  const need = S.needTap || (S.audioCtx && S.audioCtx.state !== 'running');
+  $('unlockBar').classList.toggle('hidden', !need);
+  render();
+}
+
+/* ---------- 画面 ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+let lastHtml = '';
+function render() {
+  if (S.left || !S.started) return;
+  const list = lineup(), now = Date.now();
+  const info = s => s === S.slot
+    ? { name: S.name, pos: S.pos, talking: S.talking, me: true }
+    : Object.assign({ me: false }, S.members.get(s));
+  let html = '';
+  list.forEach((s, i) => {
+    const m = info(s);
+    if (i > 0) {
+      const f = info(list[i - 1]);            // 前の車
+      const near = m.me || f.me;
+      let d = '位置待ち', t = '';
+      if (f.pos && m.pos) {
+        const meters = dist(f.pos, m.pos);
+        d = fmtDist(meters);
+        if (m.pos.spd > 1.5) t = fmtTime(meters / m.pos.spd);     // 後ろの車が今の速度で追いつくまで
+      }
+      html += '<div class="gap' + (near ? ' big' : '') + '"><span class="dist">' + d + '</span>' +
+              (t ? '<span class="time">' + t + '</span>' : '') + '</div>';
+    }
+    let tag = '';
+    if (m.talking) tag = '● 送話中';
+    else if (!m.pos) tag = '位置なし';
+    else if (!m.me && now - m.pos.at > 8000) tag = Math.round((now - m.pos.at) / 1000) + '秒前';
+    html += '<div class="car' + (m.me ? ' me' : '') + (m.talking ? ' talking' : '') + '">' +
+            '<div class="num">' + (i + 1) + '<small>号車</small></div>' +
+            '<div class="who">' + esc(m.name || '…') + (m.me ? '（自分）' : '') + '</div>' +
+            '<div class="tag">' + tag + '</div></div>';
+  });
+  if (list.length === 1) html += '<div class="alone">まだ自分だけです。<br>「招待」から仲間を呼んでください。</div>';
+  if (html !== lastHtml) { $('formation').innerHTML = html; lastHtml = html; }
+  const i = list.indexOf(S.slot);
+  $('upBtn').disabled = i <= 0; $('downBtn').disabled = i >= list.length - 1;
+  setStatus();
+}
+function setStatus() {
+  if (S.left || !S.started) return;
+  let t = (!S.peer || S.peer.destroyed || S.peer.disconnected) ? '再接続中…' : (S.conns.size + 1) + '台接続';
+  if (S.gpsErr) t += '・位置情報が取れません';
+  if (SIM) t += '・擬似GPS';
+  $('status').textContent = t;
+}
+
+/* ---------- 画面スリープ防止 ---------- */
+async function requestWake() {
+  try { if ('wakeLock' in navigator && document.visibilityState === 'visible') S.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+
+/* ---------- 招待 ---------- */
+function inviteUrl() {
+  // openExternalBrowser=1 … LINE内ブラウザではなく標準ブラウザで開かせる（マイク・位置情報のため）
+  return location.href.split(/[?#]/)[0] + '?openExternalBrowser=1#room=' + S.room;
+}
+const inviteText = () => '隊列インカムに参加してね（ルーム ' + S.room + '）\n' + inviteUrl();
+function inviteMsg(t) { $('inviteMsg').textContent = t; }
+$('shareBtn').onclick = () => {
+  const url = inviteUrl();
+  $('inviteCode').textContent = S.room;
+  $('inviteUrl').value = url;
+  $('lineBtn').href = 'https://line.me/R/share?text=' + encodeURIComponent(inviteText());
+  $('osShareBtn').classList.toggle('hidden', !navigator.share);
+  inviteMsg('');
+  try {
+    const q = qrcode(0, 'M'); q.addData(url); q.make();
+    $('inviteQr').innerHTML = q.createImgTag(4, 8);
+  } catch (e) { $('inviteQr').innerHTML = ''; }
+  $('inviteDlg').classList.remove('hidden');
+};
+$('copyBtn').onclick = async () => {
+  const text = inviteText();
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+  if (!ok) {                                  // 古い端末・権限なし向けの予備手段
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy'); ta.remove();
+    } catch (e) {}
+  }
+  inviteMsg(ok ? 'コピーしました。LINEなどに貼り付けてください' : 'コピーできませんでした。下のリンクを長押しでコピーしてください');
+};
+$('osShareBtn').onclick = async () => {
+  try { await navigator.share({ text: inviteText() }); }
+  catch (e) { if (e && e.name !== 'AbortError') inviteMsg('共有を開けませんでした。「リンクをコピー」を使ってください'); }
+};
+$('inviteUrl').onfocus = e => e.target.select();
+$('inviteClose').onclick = () => $('inviteDlg').classList.add('hidden');
+document.querySelectorAll('.dlg').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.classList.add('hidden'); }));
+
+/* ---------- 退出 ---------- */
+$('leaveBtn').onclick = () => { leave(true); joinErr(''); };
+function leave(explicit) {
+  if (explicit) saveId(false);              // 自分で退出したら自動再参加しない
+  S.left = true; S.started = false; S.rejoining = false;
+  S.timers.forEach(clearInterval); S.timers = [];
+  clearTimeout(S.latchTimer);
+  if (S.watchId != null) { try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {} S.watchId = null; }
+  try { if (S.wake) S.wake.release(); } catch (e) {} S.wake = null;
+  dropAll();
+  try { if (S.peer) S.peer.destroy(); } catch (e) {} S.peer = null;
+  try { if (S.stream) S.stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); } catch (e) {} S.stream = null;
+  try { if (S.audioCtx) S.audioCtx.close(); } catch (e) {} S.audioCtx = null;
+  S.order = []; S.ver = 0; S.by = ''; S.slot = 0; S.pos = null; S.talking = false; S.needTap = false; S.gpsErr = false; lastHtml = '';
+  $('formation').innerHTML = '';
+  $('banner').classList.add('hidden'); $('unlockBar').classList.add('hidden');
+  document.querySelectorAll('.dlg').forEach(d => d.classList.add('hidden'));
+  $('main').classList.add('hidden'); $('join').classList.remove('hidden');
+  $('joinBtn').disabled = false;
+}
+window.addEventListener('pagehide', () => { saveId(!S.left); try { if (S.peer) S.peer.destroy(); } catch (e) {} });
+boot();
+</script>
+</body>
+</html>
